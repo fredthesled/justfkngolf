@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Local dev server logs
+npm-debug.log*
+
+# Future asset pipeline (if we add one)
+node_modules/
+dist/
