@@ -1,5 +1,6 @@
 /* ================================================================
- *  Just F'kn Golf — v0.4
+ *  Just F'kn Golf — v0.5
+ *  Title screen, camera pan, birds, flag wave, announcer voice
  *  640×360 canvas, three-strike caught system, wager ÷10
  *
  *  TIMING ZONES:
@@ -59,6 +60,231 @@ function scoreDisp(n){
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  TITLE SCENE
+// ═══════════════════════════════════════════════════════════════
+class TitleScene extends Phaser.Scene {
+  constructor(){ super({ key:'TitleScene' }); }
+
+  create(){
+    // World extends 320px above the normal viewport so we can pan down
+    const SKY_EXTRA = 320;
+
+    // ── Extended sky backdrop ──────────────────────────────────
+    const g = this.add.graphics();
+    // Deep sky (above normal view)
+    g.fillStyle(C.skyT); g.fillRect(0, -SKY_EXTRA, W, SKY_EXTRA + 80);
+    g.fillStyle(C.skyB); g.fillRect(0, -SKY_EXTRA + 80, W, SKY_EXTRA);
+
+    // ── Clouds (drifting slowly right) ────────────────────────
+    this.clouds = [];
+    const cloudDefs = [
+      { x:90,  y:-290, rx:55, ry:18, a:0.70, spd:10 },
+      { x:310, y:-255, rx:44, ry:14, a:0.55, spd:7  },
+      { x:500, y:-275, rx:62, ry:20, a:0.65, spd:12 },
+      { x:200, y:-200, rx:38, ry:13, a:0.45, spd:8  },
+      { x:580, y:-220, rx:50, ry:16, a:0.60, spd:9  },
+    ];
+    cloudDefs.forEach(cd => {
+      const c = this.add.ellipse(cd.x, cd.y, cd.rx*2, cd.ry*2, C.white, cd.a);
+      this.clouds.push({ obj:c, spd:cd.spd, baseX:cd.x });
+    });
+
+    // ── Birds ─────────────────────────────────────────────────
+    this.birds = this._makeBirds();
+
+    // ── Full course (normal y coords) ─────────────────────────
+    this._buildCourse(g);
+    this._buildFlagWave();
+
+    // ── Camera setup: start high, pan down ───────────────────
+    this.cameras.main.setScroll(0, -SKY_EXTRA);
+    this.cameras.main.fadeIn(500, 0, 0, 0);
+
+    // ── Title text (placed at course-level y, hidden at start) ─
+    this.titleGroup = this._buildTitleGroup();
+    this.titleGroup.setAlpha(0);
+
+    // ── Start the pan after fade ──────────────────────────────
+    this.time.delayedCall(550, () => {
+      this.tweens.add({
+        targets: this.cameras.main,
+        scrollY: 0,
+        duration: 3600,
+        ease: 'Quad.easeInOut',
+        onComplete: () => this._revealTitle(),
+      });
+    });
+
+    // ── Input: SPACE fires announcer then starts game ─────────
+    this.spaceReady = false;
+    this.input.keyboard.on('keydown-SPACE', () => {
+      if(!this.spaceReady) return;
+      this.spaceReady = false;
+      Sound.init();
+      Sound.playTitleFanfare();
+      // Stagger words to match title lines already on screen
+      setTimeout(() => Sound.playAnnouncer(), 120);
+      this.cameras.main.flash(180, 255, 255, 255);
+      this.time.delayedCall(1900, () => this.scene.start('GameScene'));
+    });
+
+    this.elapsed = 0;
+  }
+
+  // ── Course drawing (identical palette to GameScene) ──────────
+  _buildCourse(g){
+    g.fillStyle(C.hill);
+    g.fillTriangle(0,200, 173,112, 340,200);
+    g.fillTriangle(267,200, 453,126, 640,200);
+    g.fillStyle(C.rough);  g.fillRect(0, 197, W, H-197);
+    g.fillStyle(C.fair);   g.fillEllipse(W/2, 290, 625, 174);
+    g.fillStyle(C.fairDk);
+    for(let i=0;i<28;i++) g.fillRect(16+i*21, 225+((i*11)%52), 11, 3);
+    g.fillStyle(C.sand);   g.fillEllipse(490, 283, 96, 32);
+    g.fillStyle(C.green);  g.fillEllipse(123, 192, 46, 13);
+  }
+
+  // ── Animated flag (pole + waving pennant) ────────────────────
+  _buildFlagWave(){
+    // Pole
+    this.add.rectangle(122, 173, 3, 38, 0x666666).setOrigin(0.5, 1);
+    // Flag pennant — rectangle anchored left to pole top, will tween scaleX
+    this.flagPennant = this.add.rectangle(122, 154, 18, 11, C.flag).setOrigin(0, 0.5);
+    this.tweens.add({
+      targets: this.flagPennant,
+      scaleX: 0.45,
+      duration: 420,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+    // Subtle vertical droop at minimum
+    this.tweens.add({
+      targets: this.flagPennant,
+      y: 157,
+      duration: 420,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  // ── Birds ─────────────────────────────────────────────────────
+  _makeBirds(){
+    const birds = [];
+    const defs = [
+      { x:W+30,  y:-240, spd:28, dir:-1, flapRate:320 },
+      { x:W+110, y:-205, spd:19, dir:-1, flapRate:380 },
+      { x:W+220, y:-175, spd:23, dir:-1, flapRate:290 },
+      { x:-30,   y:-190, spd:16, dir: 1, flapRate:420 },
+    ];
+    defs.forEach(d => {
+      const con = this.add.container(d.x, d.y);
+      const body = this.add.rectangle(0, 0, 5, 2, 0x111111);
+      // Wings as two rectangles that rotate around their inner edge
+      const wL = this.add.rectangle(-5, 0, 8, 2, 0x111111).setOrigin(1, 0.5);
+      const wR = this.add.rectangle( 5, 0, 8, 2, 0x111111).setOrigin(0, 0.5);
+      con.add([body, wL, wR]);
+      // Wing flap tween
+      this.tweens.add({ targets:wL, rotation:-0.65, duration:d.flapRate, yoyo:true, repeat:-1, ease:'Sine.easeInOut' });
+      this.tweens.add({ targets:wR, rotation: 0.65, duration:d.flapRate, yoyo:true, repeat:-1, ease:'Sine.easeInOut', delay:d.flapRate/2 });
+      birds.push({ con, spd:d.spd, dir:d.dir });
+    });
+    return birds;
+  }
+
+  // ── Title text group ──────────────────────────────────────────
+  _buildTitleGroup(){
+    const con = this.add.container(0, 0);
+    // Dark panel behind text
+    con.add(this.add.rectangle(W/2, 175, 460, 148, 0x000000, 0.64));
+    // Scanlines
+    const sg = this.add.graphics();
+    for(let y=100; y<250; y+=4) sg.fillStyle(0x000000,0.12).fillRect(W/2-230, y, 460, 2);
+    con.add(sg);
+    // Word 1
+    this.titleW1 = this.add.text(W/2, 120, 'JUST', {
+      fontFamily:'Courier New', fontSize:'42px', color:'#ffffff',
+      stroke:'#000000', strokeThickness:5,
+    }).setOrigin(0.5);
+    // Word 2
+    this.titleW2 = this.add.text(W/2 + 18, 164, "F'KN", {
+      fontFamily:'Courier New', fontSize:'38px', color:'#ffdd44',
+      stroke:'#000000', strokeThickness:5,
+    }).setOrigin(0.5);
+    // Word 3 (big)
+    this.titleW3 = this.add.text(W/2, 212, 'GOLF', {
+      fontFamily:'Courier New', fontSize:'54px', color:'#ffffff',
+      stroke:'#113300', strokeThickness:7,
+    }).setOrigin(0.5).setScale(1.4).setScale(1);
+    // Decorative line
+    this.titleLine = this.add.rectangle(W/2, 238, 0, 2, C.lbGold);
+    // Press start
+    this.pressStart = this.add.text(W/2, 262, 'PRESS  SPACE  TO  START', {
+      fontFamily:'Courier New', fontSize:'13px', color:'#9cff9c',
+      stroke:'#000', strokeThickness:2,
+    }).setOrigin(0.5).setAlpha(0);
+    // Version tag
+    con.add(this.add.text(W-8, H-10, 'v0.5', {
+      fontFamily:'Courier New', fontSize:'9px', color:'#444444',
+    }).setOrigin(1));
+    con.add([this.titleW1, this.titleW2, this.titleW3, this.titleLine, this.pressStart]);
+    return con;
+  }
+
+  // ── Title reveal sequence (fires when camera pan finishes) ────
+  _revealTitle(){
+    // Fade in the whole group
+    this.tweens.add({ targets:this.titleGroup, alpha:1, duration:300 });
+
+    // Stagger each word
+    this.titleW1.setAlpha(0).setY(128);
+    this.titleW2.setAlpha(0).setY(172);
+    this.titleW3.setAlpha(0).setScale(1.5);
+
+    this.time.delayedCall(100, () => {
+      this.tweens.add({ targets:this.titleW1, alpha:1, y:120, duration:380, ease:'Quad.easeOut' });
+    });
+    this.time.delayedCall(480, () => {
+      this.tweens.add({ targets:this.titleW2, alpha:1, y:164, duration:340, ease:'Quad.easeOut' });
+    });
+    this.time.delayedCall(860, () => {
+      this.tweens.add({ targets:this.titleW3, alpha:1, scaleX:1, scaleY:1, duration:220, ease:'Back.easeOut' });
+      this.cameras.main.shake(120, 0.004);
+    });
+    // Underline sweeps in
+    this.time.delayedCall(1100, () => {
+      this.tweens.add({ targets:this.titleLine, width:360, duration:350, ease:'Quad.easeOut' });
+    });
+    // Press start fades in, then blinks
+    this.time.delayedCall(1500, () => {
+      this.tweens.add({ targets:this.pressStart, alpha:1, duration:400, onComplete:() => {
+        this.tweens.add({ targets:this.pressStart, alpha:0.25, duration:550, yoyo:true, repeat:-1 });
+        this.spaceReady = true;
+      }});
+    });
+  }
+
+  update(_, delta){
+    this.elapsed += delta;
+    // Drift clouds left→right
+    this.clouds.forEach(c => {
+      c.obj.x += c.spd * delta * 0.001;
+      if(c.obj.x > W + 80) c.obj.x = -80;
+    });
+    // Move birds
+    this.birds.forEach(b => {
+      b.con.x += b.dir * b.spd * delta * 0.001;
+      // Gentle vertical undulation
+      b.con.y += Math.sin(this.elapsed * 0.001 + b.spd) * 0.18;
+      // Wrap off-screen
+      if(b.dir < 0 && b.con.x < -60) b.con.x = W + 60;
+      if(b.dir > 0 && b.con.x > W + 60) b.con.x = -60;
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  GAME SCENE
 // ═══════════════════════════════════════════════════════════════
 class GameScene extends Phaser.Scene {
@@ -98,7 +324,7 @@ class GameScene extends Phaser.Scene {
     this.buildHUD();
 
     this.input.keyboard.on('keydown-SPACE', ()=> this.onHeckle());
-    this.input.keyboard.on('keydown-R', ()=>{
+    this.input.keyboard.on('keydown-R', ()=>{ Sound.init();
       this.registry.remove('gd');
       this.scene.start('GameScene');
     });
@@ -313,8 +539,11 @@ class GameScene extends Phaser.Scene {
     else if(t>=w.s && t<=w.e) res='GOOD';
     else                       res='MISS';
     this.holeResult = res;
+    Sound.init();
     const types = res==='MISS' ? ['cough'] : ['cough','airhorn','sneeze'];
-    this.animCaddyHeckle(Phaser.Utils.Array.GetRandom(types), res);
+    const chosenType = Phaser.Utils.Array.GetRandom(types);
+    if(chosenType === 'airhorn') Sound.playAirHorn(); else Sound.playCough();
+    this.animCaddyHeckle(chosenType, res);
     if(res !== 'MISS') this.golferFlinch(res);
     else               this.suspSpike();
   }
@@ -418,7 +647,7 @@ class GameScene extends Phaser.Scene {
     const d   = this.gd;
 
     // Strikes
-    if(res === 'MISS')     d.strikes = Math.min(d.strikes + 1, MAX_STRIKES);
+    if(res === 'MISS'){     d.strikes = Math.min(d.strikes + 1, MAX_STRIKES); Sound.playStrike(); }
     if(res === 'CRITICAL') d.strikes = Math.max(d.strikes - 1, 0);
 
     // Combo
@@ -448,10 +677,13 @@ class GameScene extends Phaser.Scene {
 
     // Ball animation
     if(res==='CRITICAL'){
+      Sound.playShank();
+      Sound.playCrowdCheer();
       this.tweens.add({targets:[this.ball,this.ballSh], x:'+=76', y:'+=-42', duration:380, ease:'Quad.easeOut',
         onComplete:()=>this.tweens.add({targets:[this.ball,this.ballSh], y:'+=45', duration:320, ease:'Bounce.easeOut'})});
       this.promptTxt.setText(`MASSIVE SHANK!${earned ? `  +$${earned}` : ''}  [SPACE]`);
     } else if(res==='GOOD'){
+      Sound.playCrowdCheer();
       this.tweens.add({targets:[this.ball,this.ballSh], x:'+=26', y:'+=-16', duration:300, ease:'Quad.easeOut',
         onComplete:()=>this.tweens.add({targets:[this.ball,this.ballSh], y:'+=18', duration:250, ease:'Bounce.easeOut'})});
       this.promptTxt.setText(`Flinched!  +$${earned}  [SPACE]`);
@@ -647,6 +879,7 @@ class LeaderboardScene extends Phaser.Scene {
           this.tweens.add({targets:pr.cardBg, scaleX:0, duration:130,
             onComplete:()=>{
               pr.cardBg.fillColor = C.lbHi;
+              Sound.playLeaderboardUpdate();
               // squish back in
               this.tweens.add({targets:pr.cardBg, scaleX:1, duration:130,
                 onComplete:()=>{
@@ -687,5 +920,5 @@ new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [GameScene, LeaderboardScene],
+  scene: [TitleScene, GameScene, LeaderboardScene],
 });
