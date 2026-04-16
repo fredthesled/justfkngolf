@@ -140,8 +140,8 @@ class SoundEngine {
   playAnnouncer(){
     if(!window.speechSynthesis) return;
 
-    const words  = ['JUST!', 'FRIKKIN!', 'GOLF!'];
-    const delays = [0,        620,         1180 ];
+    const words  = ['JUST!', 'FUGGIN!', 'GOLF!'];
+    const delays = [0,        400,         800 ];
 
     const doSpeak = () => {
       words.forEach((word, i) => {
